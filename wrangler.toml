@@ -1,6 +1,6 @@
 # Cloudflare Workers 配置文件
 name = "ai-chat-worker"
-main = "worker.js"
+main = "worker-bundled.js"
 compatibility_date = "2023-12-01"
 
 # 环境变量设置（在Cloudflare Dashboard中配置）

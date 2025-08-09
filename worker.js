@@ -1,70 +1,183 @@
-// Cloudflare Workers 聊天API处理器
+import { 
+  buildSchema, 
+  parse, 
+  validate, 
+  execute
+} from 'graphql'
 
-export default {
-  async fetch(request, env) {
-    // 处理CORS预检请求
-    if (request.method === 'OPTIONS') {
-      return handleCORS()
+// GraphQL Schema
+const schema = buildSchema(`
+  type Query {
+    hello: String
+  }
+
+  type Mutation {
+    sendMessage(message: String!): ChatResponse!
+  }
+
+  type ChatResponse {
+    content: String!
+    error: String
+  }
+`)
+
+// Root resolver
+const rootValue = {
+  hello: () => 'Hello from GraphQL!',
+  sendMessage: async ({ message }, context) => {
+    try {
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return {
+          content: '',
+          error: '请提供有效的消息内容'
+        }
+      }
+
+      const aiResponse = await callChatGPT(message.trim(), context.env)
+      return {
+        content: aiResponse,
+        error: null
+      }
+    } catch (error) {
+      console.error('处理聊天请求时出错:', error)
+      return {
+        content: '抱歉，我现在无法处理您的请求。请稍后再试。',
+        error: error.message || '服务器内部错误'
+      }
     }
-
-    const url = new URL(request.url)
-    
-    // 路由处理
-    if (url.pathname === '/api/chat' && request.method === 'POST') {
-      return handleChatRequest(request, env)
-    }
-
-    // 默认返回404
-    return new Response('Not Found', { 
-      status: 404,
-      headers: getCORSHeaders()
-    })
   }
 }
 
-// 处理聊天请求
-async function handleChatRequest(request, env) {
-  try {
-    const { message } = await request.json()
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400'
+}
 
-    if (!message || typeof message !== 'string') {
-      return new Response(JSON.stringify({
-        error: '请提供有效的消息内容'
-      }), { 
-        status: 400,
+export default {
+  async fetch(request, env) {
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      })
+    }
+
+    const url = new URL(request.url)
+
+    // GraphQL endpoint
+    if (url.pathname === '/graphql' && request.method === 'POST') {
+      return handleGraphQL(request, env)
+    }
+
+    // GraphQL Playground (GET request)
+    if (url.pathname === '/graphql' && request.method === 'GET') {
+      return new Response(graphqlPlaygroundHTML, {
         headers: {
-          'Content-Type': 'application/json',
-          ...getCORSHeaders()
+          'Content-Type': 'text/html',
+          ...corsHeaders
         }
       })
     }
 
-    // 调用ChatGPT API
-    const aiResponse = await callChatGPT(message, env)
+    // Default 404
+    return new Response('Not Found', {
+      status: 404,
+      headers: corsHeaders
+    })
+  }
+}
 
-    return new Response(JSON.stringify({
-      content: aiResponse
-    }), {
-      status: 200,
+async function handleGraphQL(request, env) {
+  try {
+    const body = await request.json()
+    const { query, variables, operationName } = body
+
+    if (!query) {
+      return new Response(
+        JSON.stringify({ 
+          errors: [{ message: 'Must provide query string.' }] 
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        }
+      )
+    }
+
+    // Parse the GraphQL query
+    let document
+    try {
+      document = parse(query)
+    } catch (syntaxError) {
+      return new Response(
+        JSON.stringify({ 
+          errors: [{ message: syntaxError.message }] 
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        }
+      )
+    }
+
+    // Validate the query
+    const validationErrors = validate(schema, document)
+    if (validationErrors.length > 0) {
+      return new Response(
+        JSON.stringify({ 
+          errors: validationErrors.map(error => ({ message: error.message })) 
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        }
+      )
+    }
+
+    // Execute the query
+    const result = await execute({
+      schema,
+      document,
+      rootValue,
+      contextValue: { env, request },
+      variableValues: variables,
+      operationName
+    })
+
+    return new Response(JSON.stringify(result), {
       headers: {
         'Content-Type': 'application/json',
-        ...getCORSHeaders()
+        ...corsHeaders
       }
     })
 
   } catch (error) {
-    console.error('处理聊天请求时出错:', error)
-    
-    return new Response(JSON.stringify({
-      error: '服务器内部错误',
-      content: '抱歉，我现在无法处理您的请求。请稍后再试。'
-    }), { 
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...getCORSHeaders()
+    console.error('GraphQL error:', error)
+    return new Response(
+      JSON.stringify({ 
+        errors: [{ message: 'Internal server error' }] 
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
       }
-    })
+    )
   }
 }
 
@@ -102,6 +215,11 @@ async function callChatGPT(message, env) {
   if (!response.ok) {
     const errorData = await response.text()
     console.error('OpenAI API错误:', errorData)
+    
+    if (response.status === 429) {
+      throw new Error('OpenAI API 配额已用完，请检查账户余额或稍后重试')
+    }
+    
     throw new Error(`OpenAI API调用失败: ${response.status}`)
   }
 
@@ -109,20 +227,55 @@ async function callChatGPT(message, env) {
   return data.choices[0]?.message?.content || '抱歉，我无法生成回复。'
 }
 
-// 获取CORS头部
-function getCORSHeaders() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Max-Age': '86400',
-  }
-}
-
-// 处理CORS预检请求
-function handleCORS() {
-  return new Response(null, {
-    status: 204,
-    headers: getCORSHeaders()
-  })
-}
+// GraphQL Playground HTML
+const graphqlPlaygroundHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=utf-8/>
+  <meta name="viewport" content="user-scalable=no, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, minimal-ui">
+  <title>GraphQL Playground</title>
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/graphql-playground-react/build/static/css/index.css" />
+  <link rel="shortcut icon" href="//cdn.jsdelivr.net/npm/graphql-playground-react/build/favicon.png" />
+  <script src="//cdn.jsdelivr.net/npm/graphql-playground-react/build/static/js/middleware.js"></script>
+</head>
+<body>
+  <div id="root">
+    <style>
+      body {
+        background-color: rgb(23, 42, 58);
+        font-family: Open Sans, sans-serif;
+        height: 90vh;
+      }
+      #root {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .loading {
+        font-size: 32px;
+        font-weight: 200;
+        color: rgba(255, 255, 255, .6);
+        margin-left: 20px;
+      }
+      img {
+        width: 78px;
+        height: 78px;
+      }
+      .title {
+        font-weight: 400;
+      }
+    </style>
+    <img src="//cdn.jsdelivr.net/npm/graphql-playground-react/build/logo.png" alt="">
+    <div class="loading"> Loading
+      <span class="title">GraphQL Playground</span>
+    </div>
+  </div>
+  <script>window.addEventListener('load', function (event) {
+      GraphQLPlayground.init(document.getElementById('root'), {
+        endpoint: '/graphql'
+      })
+    })</script>
+</body>
+</html>`
