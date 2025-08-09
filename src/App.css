@@ -132,7 +132,90 @@
   line-height: 1.6;
   margin-bottom: 0.5rem;
   word-wrap: break-word;
+}
+
+.user-message .message-content {
   white-space: pre-wrap;
+}
+
+/* Markdown 样式 */
+.ai-message .message-content h1,
+.ai-message .message-content h2,
+.ai-message .message-content h3,
+.ai-message .message-content h4,
+.ai-message .message-content h5,
+.ai-message .message-content h6 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ai-message .message-content h1 {
+  font-size: 1.25em;
+}
+
+.ai-message .message-content h2 {
+  font-size: 1.15em;
+}
+
+.ai-message .message-content h3 {
+  font-size: 1.1em;
+}
+
+.ai-message .message-content p {
+  margin: 0.5em 0;
+}
+
+.ai-message .message-content ul,
+.ai-message .message-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.ai-message .message-content li {
+  margin: 0.25em 0;
+}
+
+.ai-message .message-content code {
+  background: #f3f4f6;
+  padding: 0.125em 0.25em;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+  color: #dc2626;
+}
+
+.ai-message .message-content pre {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.75em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+
+.ai-message .message-content pre code {
+  background: none;
+  padding: 0;
+  color: #1f2937;
+  font-size: 0.875em;
+}
+
+.ai-message .message-content blockquote {
+  border-left: 3px solid #10b981;
+  margin: 0.5em 0;
+  padding-left: 1em;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.ai-message .message-content strong {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ai-message .message-content em {
+  font-style: italic;
 }
 
 .message-time {
